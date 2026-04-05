@@ -1,0 +1,51 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: agm
+    ports:
+      - "5433:5432"
+    volumes:
+      - agm_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d agm"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  backend:
+    build: ./backend
+    environment:
+      ENV: dev
+      SECRET_KEY: dev-secret-change-me
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@db:5432/agm
+      BACKEND_CORS_ORIGINS: http://localhost:5173,http://localhost:3000
+      LLM_MODE: ${LLM_MODE:-1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-phi3:mini}
+      LOCAL_LLM_BASE_URL: ${LOCAL_LLM_BASE_URL:-http://host.docker.internal:1234/v1}
+      LOCAL_LLM_MODEL: ${LOCAL_LLM_MODEL:-Phi-3-mini-128k-instruct}
+      LOCAL_LLM_API_KEY: ${LOCAL_LLM_API_KEY:-}
+      RESEND_API_KEY: ${RESEND_API_KEY}
+      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-onboarding@resend.dev}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: on-failure
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
+
+volumes:
+  agm_db_data:

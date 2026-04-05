@@ -1,0 +1,28 @@
+<!-- This index.html file is the entry point for your React frontend application -->
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AGM Portal MVP</title>
+    <script type="module" crossorigin src="/assets/index-faB02xpG.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-BaUrzbUc.css">
+  </head>
+  <body>
+    <!-- it acts as the "mounting point" or "container" for your entire React application. 
+     When React boots up, it finds this specific div and injects all of your components 
+     (like the Dashboard, Login page, etc.) directly into it. -->
+    <div id="root"></div>
+    <!-- It points to /src/main.tsx, which is the main TypeScript/React file 
+     where your application logic starts. -->
+  </body>
+</html>
+
+<!-- 
+The <script type="module" src="/src/main.tsx"></script> tag doesn't tell the code to find the body. 
+Instead, it tells the browser: "Hey, go load this JavaScript file (main.tsx) and run it."
+
+Once that main.tsx file wakes up and starts running, the code inside main.tsx goes 
+looking for the <div id="root"></div>.-->
+
