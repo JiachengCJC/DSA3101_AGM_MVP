@@ -1,76 +1,72 @@
 # AGM Portal MVP
 
-AGM Portal MVP is a full-stack, role-aware AI project portfolio platform for project registry, access control, analytics, ingestion, and assistant workflows.
+AGM Portal MVP is a full-stack platform for AI project governance. It provides a centralized project registry, role-aware access control, portfolio analytics, CSV-based ingestion, and an assistant experience over user-visible project data.
 
-This repository contains:
+## Highlights
 
-- React frontend (`frontend/`)
-- FastAPI backend (`backend/`)
-- PostgreSQL database (Docker service)
-- Docker Compose orchestration (`docker-compose.yml`)
-
-## Core Capabilities
-
-- Email OTP MFA with final JWT issuance after OTP verification
-- Role-based route and API protection after MFA (`researcher`, `management`, `admin`)
-- Centralized project registry with project-level permission controls
-- Lifecycle metadata tracking (`lifecycle_stage`, `trl_level`, `trc_category`)
-- Project updates, funding event ledger, and snapshot version restore
+- Password + email OTP multi-factor authentication before JWT issuance
+- Trusted device flow to reduce repeated OTP prompts
+- Global role controls (`researcher`, `management`, `admin`)
+- Project-level access permissions with access-level templates and overrides
+- Project updates, funding event tracking, and snapshot version restore
 - Portfolio analytics for management and admin users
 - AMGrant-style CSV ingestion endpoint
-- LLM assistant with 3 provider modes (OpenAI, Ollama, LM studio)
-- Authenticated request auditing plus domain action audit logs
+- Assistant endpoint with OpenAI, Ollama, and local OpenAI-compatible modes
+- API and domain audit logging for traceability
 
-## Runtime Architecture
+## Architecture
 
 ```mermaid
 flowchart LR
-    U[Users] --> FE[React Frontend]
-    FE -->|Bearer JWT| BE[FastAPI Backend]
+    U[Portal Users] --> FE[React Frontend]
+    FE -->|JWT Bearer| BE[FastAPI Backend]
     BE --> DB[(PostgreSQL 16)]
-    BE --> LL[Local LLM - LM Studio]
+    BE --> LLM[LLM Provider]
 ```
-
-
 
 ## Technology Stack
 
-
-| Layer            | Technology                                         |
-| ---------------- | -------------------------------------------------- |
-| Frontend         | React 18, TypeScript, Vite, Tailwind CSS, Recharts |
-| Backend          | FastAPI, SQLAlchemy 2, Pydantic v2, httpx          |
-| Auth             | Password + email OTP MFA, then JWT (HS256)        |
-| Database         | PostgreSQL 16                                      |
-| Containers       | Docker Compose                                     |
-| Frontend Serving | Nginx                                              |
-
+| Layer | Technology |
+| --- | --- |
+| Frontend | React 18, TypeScript, Vite, Tailwind CSS, Recharts |
+| Backend | FastAPI, SQLAlchemy 2, Pydantic v2, httpx |
+| Authentication | Password + email OTP, JWT (HS256), trusted device cookie |
+| Database | PostgreSQL 16 |
+| Containerization | Docker Compose |
+| Frontend serving | Nginx |
 
 ## Repository Layout
 
 ```text
 backend/
   app/
-    api/routes/         # auth, projects, analytics, ingest, assistant
-    core/               # config and security
-    db/                 # SQLAlchemy engine/session/init
-    models/             # ORM models
-    schemas/            # request/response models
+    api/routes/      # auth, projects, analytics, ingest, assistant
+    core/            # config, security, email
+    db/              # db setup/session/init
+    models/          # ORM models
+    schemas/         # request/response schemas
+  tests/             # backend tests
 frontend/
   src/
-    pages/              # app pages
-    components/         # layout, assistant chat, shared UI
+    pages/
+    components/
 infra/
   amgrant_mock.csv
 README.md
 documentation.md
 databaseNavigate.md
+project-introduction.md
 docker-compose.yml
 ```
 
 ## Quick Start (Docker)
 
-From repository root:
+### Prerequisites
+
+- Docker Engine / Docker Desktop
+- Docker Compose v2
+
+### Start the stack
 
 ```bash
 docker compose up -d --build
@@ -78,112 +74,102 @@ docker compose ps
 curl http://localhost:8000/health
 ```
 
-Primary URLs:
+### Service URLs
 
 - Frontend: [http://localhost:5173](http://localhost:5173)
-- Swagger UI: [http://localhost:8000/docs](http://localhost:8000/docs)
-- Health: [http://localhost:8000/health](http://localhost:8000/health)
+- Backend API docs: [http://localhost:8000/docs](http://localhost:8000/docs)
+- Health check: [http://localhost:8000/health](http://localhost:8000/health)
+- PostgreSQL (host access): `localhost:5433`
 
-Default seeded users (created on startup if missing):
+### Demo accounts
 
-- `dsa10ademo+admin@gmail.com` / `password`
-- `dsa10ademo+management@gmail.com` / `password`
-- `dsa10ademo+researcher@gmail.com` / `password`
+These users are seeded on backend startup if missing:
 
-## Operations
+| Email | Role | Password |
+| --- | --- | --- |
+| `dsa10ademo@gmail.com` | `admin` | `password` |
+| `dsa10ademo+admin@gmail.com` | `admin` | `password` |
+| `dsa10ademo+management@gmail.com` | `management` | `password` |
+| `dsa10ademo+researcher@gmail.com` | `researcher` | `password` |
 
-Start/restart services:
+## Local Development (Without Docker)
 
-```bash
-docker compose up -d --build
-```
-
-Stop services (keep DB volume):
-
-```bash
-docker compose down
-```
-
-Full reset (delete DB volume):
+### Backend
 
 ```bash
-docker compose down --volumes --remove-orphans --rmi all
-docker compose up -d --build
+cd backend
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-## Configuration Overview
+### Frontend
 
-Backend env vars (set in `docker-compose.yml`, loaded by `backend/app/core/config.py`):
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
+Frontend defaults to `http://localhost:8000/api/v1` unless `VITE_API_URL` is set.
 
-| Variable               | Purpose                                   | Default                                               |
-| ---------------------- | ----------------------------------------- | ----------------------------------------------------- |
-| `ENV`                  | Runtime mode (`dev` / `prod`)             | `dev`                                                 |
-| `SECRET_KEY`           | JWT signing key                           | `dev-secret-change-me` (compose)                      |
-| `DATABASE_URL`         | SQLAlchemy connection string              | `postgresql+psycopg2://postgres:postgres@db:5432/agm` |
-| `BACKEND_CORS_ORIGINS` | Allowed origins when `ENV=prod`           | `http://localhost:5173,http://localhost:3000`         |
-| `LLM_MODE`             | Assistant default provider mode (`1/2/3`) | `3` (code default)                                    |
-| `OPENAI_API_KEY`       | OpenAI key for mode `1`                   | empty                                                 |
-| `OPENAI_MODEL`         | OpenAI model                              | `gpt-4o-mini`                                         |
-| `OLLAMA_BASE_URL`      | Ollama endpoint                           | `http://host.docker.internal:11434`                   |
-| `OLLAMA_MODEL`         | Ollama model                              | `phi3:mini`                                           |
-| `LOCAL_LLM_BASE_URL`   | Local OpenAI-compatible endpoint          | `http://host.docker.internal:1234/v1`                 |
-| `LOCAL_LLM_MODEL`      | Local model ID                            | `Phi-3-mini-128k-instruct`                            |
-| `LOCAL_LLM_API_KEY`    | Optional token for local endpoint         | empty                                                 |
-| `RESEND_API_KEY`       | Resend API key for OTP delivery           | empty                                                 |
-| `RESEND_FROM_EMAIL`    | Resend sender address                     | `onboarding@resend.dev`                               |
+## Configuration
 
-## Login Flow
+Backend settings are defined in `backend/app/core/config.py` and can be overridden with environment variables.
 
-1. Submit email + password to `POST /api/v1/auth/token`.
-2. Backend validates the password, invalidates any prior active login OTPs, creates a new OTP challenge, and emails a 6-digit code through Resend.
-3. Frontend shows the OTP step instead of storing a JWT.
-4. Submit `challenge_id` + OTP to `POST /api/v1/auth/otp/verify`.
-5. Backend marks the challenge as used and only then returns the final bearer token.
+| Variable | Purpose | Default / Compose Value |
+| --- | --- | --- |
+| `ENV` | Runtime mode | `dev` |
+| `SECRET_KEY` | JWT signing key | `dev-secret-change-me` (compose) |
+| `DATABASE_URL` | SQLAlchemy database URL | `postgresql+psycopg2://postgres:postgres@db:5432/agm` |
+| `BACKEND_CORS_ORIGINS` | Allowed web origins | `http://localhost:5173,http://localhost:3000` |
+| `LLM_MODE` | Assistant provider mode | compose default: `1`; code default: `3` |
+| `OPENAI_API_KEY` | OpenAI key for mode `1` | empty |
+| `OPENAI_MODEL` | OpenAI model | `gpt-4o-mini` |
+| `OLLAMA_BASE_URL` | Ollama endpoint | `http://host.docker.internal:11434` |
+| `OLLAMA_MODEL` | Ollama model | `phi3:mini` |
+| `LOCAL_LLM_BASE_URL` | Local OpenAI-compatible endpoint | `http://host.docker.internal:1234/v1` |
+| `LOCAL_LLM_MODEL` | Local model ID | `Phi-3-mini-128k-instruct` (compose) |
+| `LOCAL_LLM_API_KEY` | Optional local endpoint token | empty |
+| `RESEND_API_KEY` | OTP email provider key | empty |
+| `RESEND_FROM_EMAIL` | OTP sender email | `onboarding@resend.dev` |
+
+### Assistant provider modes
+
+- `1`: OpenAI (`/v1/chat/completions`)
+- `2`: Ollama (`/api/chat`)
+- `3`: Local OpenAI-compatible endpoint (`/chat/completions`)
+
+## Authentication and Access
+
+### Login flow
+
+1. User submits credentials to `POST /api/v1/auth/token`.
+2. Backend validates password and issues an OTP challenge.
+3. User verifies OTP via `POST /api/v1/auth/otp/verify`.
+4. Backend returns JWT only after successful OTP verification.
 
 Related endpoints:
 
 - `POST /api/v1/auth/token`
 - `POST /api/v1/auth/otp/resend`
 - `POST /api/v1/auth/otp/verify`
+- `POST /api/v1/auth/logout`
 
+### Role model
 
-Frontend env var:
+- `researcher`: project registry and project-level actions where permitted
+- `management`: researcher capabilities + portfolio analytics + CSV ingest
+- `admin`: full platform privileges (including user administration and end-project actions)
 
-- `VITE_API_URL` (optional), default `http://localhost:8000/api/v1`
-
-## LLM Assistant Modes
-
-Backend modes:
-
-- `1`: OpenAI
-- `2`: Ollama
-- `3`: LM Studio
-
-Frontend currently sends a fixed mode from `frontend/src/components/AssistantChat.tsx` via `CHAT_MODE` (default in code: `3`).
-
-## Access Model (Summary)
-
-Global roles:
-
-- `researcher`
-- `management`
-- `admin`
-
-Role-gated pages:
-
-- `/dashboard`: management, admin
-- `/import`: management, admin
-- `/users`: admin
-
-Project-level behavior:
+### Project visibility and control
 
 - All authenticated users can list projects.
-- Users without project access still see `title` and `people_involved` in registry list.
-- Full project details and project actions require owner/admin or explicit project permission.
-- Ending a project (`POST /projects/{id}/end`) is admin-only.
+- Users without project access see limited registry fields.
+- Full detail and mutation rights require owner/admin or explicit project permission.
 
-## API Surfaces
+## API Surface
 
 Base prefix: `/api/v1`
 
@@ -192,28 +178,50 @@ Base prefix: `/api/v1`
 - Analytics: `/analytics/portfolio`
 - Ingestion: `/integrations/amgrant/ingest`
 - Assistant: `/assistant/chat`
-- Public health: `/health`
+- Public health endpoint: `/health`
+
+## Testing
+
+Run backend MFA tests:
+
+```bash
+cd backend
+pytest tests/test_auth_mfa.py
+```
+
+## Operations
+
+Start or rebuild:
+
+```bash
+docker compose up -d --build
+```
+
+Stop (retain DB volume):
+
+```bash
+docker compose down
+```
+
+Full reset (remove DB volume and images):
+
+```bash
+docker compose down --volumes --remove-orphans --rmi all
+docker compose up -d --build
+```
 
 ## Documentation
 
 - Technical reference: [documentation.md](./documentation.md)
 - Database operations: [databaseNavigate.md](./databaseNavigate.md)
+- Non-technical product overview: [project-introduction.md](./project-introduction.md)
 
-## Local MFA Testing
-
-1. Export `RESEND_API_KEY` and optionally `RESEND_FROM_EMAIL`.
-2. Start the stack with `docker compose up -d --build`.
-3. Sign in with one of the demo users and password `password`.
-4. Check the inbox for the OTP, then complete verification in the frontend.
-5. Test resend cooldown, expired OTPs, wrong OTPs, and already-used/superseded OTP messages from the login screen.
-
-## Production Hardening Checklist
+## Production Notes
 
 Before production deployment:
 
-- Replace `SECRET_KEY` and remove default/demo credentials
-- Set `ENV=prod` and restrict `BACKEND_CORS_ORIGINS`
-- Replace runtime schema patching with Alembic migrations
-- Add HTTPS termination, secure secret management, backups, and monitoring
-- Add rate limiting, stronger validation, and automated test coverage
-
+- Replace `SECRET_KEY` and remove demo credentials
+- Restrict CORS to approved frontend origins
+- Add migration workflow (e.g., Alembic)
+- Add secure secret management, backups, and monitoring
+- Add rate limiting, hardening, and broader automated test coverage
