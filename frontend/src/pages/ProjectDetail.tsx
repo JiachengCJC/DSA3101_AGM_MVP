@@ -1,3 +1,7 @@
+/**
+ * Detailed project page for metadata, funding history, updates, and access controls.
+ * Coordinates project-specific API calls and permission-aware action states.
+ */
 import React, { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import api from '../api'

@@ -1,3 +1,7 @@
+/**
+ * Shared Axios client for backend API calls.
+ * Injects the stored JWT into `Authorization` headers and enables credentialed requests for cookie-based flows.
+ */
 import axios from 'axios'
 
 const api = axios.create({

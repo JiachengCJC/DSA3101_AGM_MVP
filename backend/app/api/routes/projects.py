@@ -1,3 +1,5 @@
+"""Project CRUD, funding, updates, permissions, and version-restore endpoints."""
+
 import json
 from datetime import date, datetime, time, timezone
 from decimal import Decimal
@@ -136,6 +138,7 @@ DEFAULT_PROJECT_FIELD_OPTIONS: dict[str, list[str]] = {
 
 
 def _log(db: Session, actor_user_id: int, action: str, entity_type: str, entity_id: int, diff: dict | None = None):
+    """Append an audit-log row for project-domain actions without committing immediately."""
     db.add(
         AuditLog(
             actor_user_id=actor_user_id,
@@ -148,6 +151,7 @@ def _log(db: Session, actor_user_id: int, action: str, entity_type: str, entity_
 
 
 def _get_project_or_404(db: Session, project_id: int) -> Project:
+    """Load a project by ID or raise HTTP 404 when missing."""
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -155,14 +159,17 @@ def _get_project_or_404(db: Session, project_id: int) -> Project:
 
 
 def _is_admin(user: User) -> bool:
+    """Return `True` when the user has the admin role."""
     return user.role == "admin"
 
 
 def _is_owner(project: Project, user: User) -> bool:
+    """Return `True` when the user owns the project."""
     return project.owner_id == user.id
 
 
 def _permission_row(db: Session, project_id: int, user_id: int) -> ProjectPermission | None:
+    """Return the explicit project-permission row for a user, if one exists."""
     return (
         db.query(ProjectPermission)
         .filter(ProjectPermission.project_id == project_id, ProjectPermission.user_id == user_id)
@@ -171,6 +178,7 @@ def _permission_row(db: Session, project_id: int, user_id: int) -> ProjectPermis
 
 
 def _normalize_access_level_key(access_level_key: str | None) -> str:
+    """Normalize access-level aliases to canonical keys (`principal_investigator`, `team_member`, `viewer`)."""
     if not access_level_key:
         return "viewer"
     cleaned = access_level_key.strip().lower().replace("-", "_")
@@ -190,11 +198,13 @@ def _normalize_access_level_key(access_level_key: str | None) -> str:
 
 
 def _access_levels_map(db: Session) -> dict[str, ProjectAccessLevel]:
+    """Load all access-level definitions into a dictionary keyed by access-level key."""
     rows = db.query(ProjectAccessLevel).all()
     return {row.key: row for row in rows}
 
 
 def _default_permissions_for_level(access_level_key: str) -> dict[str, bool]:
+    """Return default permission flags for an access-level key."""
     definition = PROJECT_ACCESS_LEVEL_DEFINITIONS.get(
         _normalize_access_level_key(access_level_key),
         PROJECT_ACCESS_LEVEL_DEFINITIONS["viewer"],
@@ -207,6 +217,7 @@ def _permissions_for_level(
     access_levels: dict[str, ProjectAccessLevel],
     access_level_key: str,
 ) -> dict[str, bool]:
+    """Return effective defaults for an access level from DB-backed definitions, with fallback defaults."""
     normalized = _normalize_access_level_key(access_level_key)
     access_level = access_levels.get(normalized)
     if not access_level:
@@ -218,6 +229,7 @@ def _effective_permission_values(
     permission: ProjectPermission,
     access_levels: dict[str, ProjectAccessLevel],
 ) -> dict[str, bool]:
+    """Resolve permission flags by combining access-level defaults with per-user overrides."""
     if not permission.access_level_key:
         return {field: bool(getattr(permission, field, False)) for field in PROJECT_PERMISSION_FIELDS}
     defaults = _permissions_for_level(access_levels, permission.access_level_key)
@@ -234,6 +246,7 @@ def _apply_permission_payload(
     requested_permissions: dict[str, bool],
     access_levels: dict[str, ProjectAccessLevel],
 ) -> None:
+    """Apply requested permission values, storing only non-default flags as overrides."""
     normalized_level = _normalize_access_level_key(access_level_key)
     defaults = _permissions_for_level(access_levels, normalized_level)
     permission.access_level_key = normalized_level
@@ -254,6 +267,7 @@ def _has_project_access_from_permission(
     permission: ProjectPermission | None,
     action: str,
 ) -> bool:
+    """Evaluate whether an actor can perform an action given ownership/admin state and permission flags."""
     if _is_admin(user) or _is_owner(project, user):
         return True
     if permission is None:
@@ -281,16 +295,19 @@ def _has_project_access_from_permission(
 
 
 def _has_project_access(db: Session, project: Project, user: User, action: str) -> bool:
+    """Evaluate action authorization for a project by loading the actor's permission row."""
     permission = _permission_row(db, project.id, user.id)
     return _has_project_access_from_permission(project, user, permission, action)
 
 
 def _ensure_project_access(db: Session, project: Project, user: User, action: str) -> None:
+    """Raise HTTP 403 when a user lacks authorization for the requested project action."""
     if not _has_project_access(db, project, user, action):
         raise HTTPException(status_code=403, detail="Not allowed")
 
 
 def _permission_map_for_user(db: Session, user_id: int, project_ids: list[int]) -> dict[int, ProjectPermission]:
+    """Build a project-id to permission-row map for list endpoints."""
     if not project_ids:
         return {}
     rows = (
@@ -302,6 +319,7 @@ def _permission_map_for_user(db: Session, user_id: int, project_ids: list[int]) 
 
 
 def _people_involved_by_project(db: Session, project_ids: list[int]) -> dict[int, list[ProjectPersonBrief]]:
+    """Collect owners and permissioned users per project for project list display."""
     if not project_ids:
         return {}
 
@@ -345,6 +363,7 @@ def _people_involved_by_project(db: Session, project_ids: list[int]) -> dict[int
 
 
 def _project_snapshot(project: Project) -> dict[str, str | float | int | None]:
+    """Build a normalized snapshot dict of restorable project fields."""
     snapshot: dict[str, str | float | int | None] = {}
     for field in SNAPSHOT_FIELDS:
         value = getattr(project, field)
@@ -358,6 +377,7 @@ def _project_snapshot(project: Project) -> dict[str, str | float | int | None]:
 
 
 def _parse_end_datetime(value: str | None) -> datetime | None:
+    """Parse project end-date strings into UTC datetimes for version restore."""
     if not value:
         return None
 
@@ -377,6 +397,7 @@ def _parse_end_datetime(value: str | None) -> datetime | None:
 
 
 def _save_project_version(db: Session, project: Project, actor_user_id: int, reason: str) -> None:
+    """Persist a point-in-time project snapshot for version history."""
     db.add(
         ProjectVersion(
             project_id=project.id,
@@ -392,6 +413,7 @@ def _permission_to_schema(
     user: User,
     access_levels: dict[str, ProjectAccessLevel],
 ) -> ProjectPermissionOut:
+    """Convert a permission ORM row and user row into API response shape."""
     effective = _effective_permission_values(permission, access_levels)
     return ProjectPermissionOut(
         id=permission.id,
@@ -418,6 +440,7 @@ def _permission_to_schema(
 
 
 def _merge_unique_options(*option_sets: list[str]) -> list[str]:
+    """Merge option lists while preserving order and removing case-insensitive duplicates."""
     seen: set[str] = set()
     merged: list[str] = []
     for option_set in option_sets:
@@ -434,6 +457,7 @@ def _merge_unique_options(*option_sets: list[str]) -> list[str]:
 
 
 def _normalize_option_name(value: str | None) -> str | None:
+    """Normalize candidate option names by trimming whitespace and dropping empty values."""
     if value is None:
         return None
     cleaned = value.strip()
@@ -443,16 +467,19 @@ def _normalize_option_name(value: str | None) -> str | None:
 
 
 def _query_option_values(db: Session, option_model) -> list[str]:
+    """Load normalized option names from an option catalog table."""
     rows = db.query(option_model.name).order_by(option_model.name.asc()).all()
     return [value for (value,) in rows if isinstance(value, str) and value.strip()]
 
 
 def _query_distinct_project_values(db: Session, field) -> list[str]:
+    """Load distinct non-empty values from a project column."""
     rows = db.query(field).filter(field.isnot(None)).distinct().all()
     return [value.strip() for (value,) in rows if isinstance(value, str) and value.strip()]
 
 
 def _upsert_standardized_option(db: Session, option_model, raw_name: str | None, actor_user_id: int | None):
+    """Find-or-create a standardized option entry using case-insensitive matching."""
     name = _normalize_option_name(raw_name)
     if not name:
         return None
@@ -477,6 +504,7 @@ def _sync_standardized_project_options(
     trc_category: str | None,
     actor_user_id: int | None,
 ) -> None:
+    """Ensure each standardized project field value exists in its option catalog table."""
     _upsert_standardized_option(db, InstitutionOption, institution, actor_user_id)
     _upsert_standardized_option(db, DomainOption, domain, actor_user_id)
     _upsert_standardized_option(db, AITypeOption, ai_type, actor_user_id)
@@ -486,6 +514,7 @@ def _sync_standardized_project_options(
 
 
 def _option_to_schema(option) -> ProjectOptionOut:
+    """Convert an option ORM row into `ProjectOptionOut` response payload."""
     return ProjectOptionOut(
         id=option.id,
         name=option.name,
@@ -504,6 +533,7 @@ def list_projects(
     trl_level: str | None = None,
     trc_category: str | None = None,
 ):
+    """List projects with optional filters and visibility-aware field redaction."""
     query = db.query(Project)
 
     if q:
@@ -557,6 +587,7 @@ def list_project_field_options(
     db: Session = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
+    """Return merged project field options from defaults, option tables, and existing project values."""
     merged = {
         "institution": _merge_unique_options(
             DEFAULT_PROJECT_FIELD_OPTIONS["institution"],
@@ -598,6 +629,7 @@ def create_institution_option(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """Create or reuse a normalized institution option."""
     option = _upsert_standardized_option(db, InstitutionOption, payload.name, user.id)
     if option is None:
         raise HTTPException(status_code=400, detail="Institution option cannot be empty")
@@ -612,6 +644,7 @@ def create_domain_option(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """Create or reuse a normalized domain option."""
     option = _upsert_standardized_option(db, DomainOption, payload.name, user.id)
     if option is None:
         raise HTTPException(status_code=400, detail="AI category option cannot be empty")
@@ -626,6 +659,7 @@ def create_ai_type_option(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """Create or reuse a normalized AI-type option."""
     option = _upsert_standardized_option(db, AITypeOption, payload.name, user.id)
     if option is None:
         raise HTTPException(status_code=400, detail="AI methodology option cannot be empty")
@@ -640,6 +674,7 @@ def create_lifecycle_stage_option(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """Create or reuse a normalized lifecycle-stage option."""
     option = _upsert_standardized_option(db, LifecycleStageOption, payload.name, user.id)
     if option is None:
         raise HTTPException(status_code=400, detail="Lifecycle stage option cannot be empty")
@@ -654,6 +689,7 @@ def create_trl_level_option(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """Create or reuse a normalized TRL-level option."""
     option = _upsert_standardized_option(db, TrlLevelOption, payload.name, user.id)
     if option is None:
         raise HTTPException(status_code=400, detail="TRL option cannot be empty")
@@ -668,6 +704,7 @@ def create_trc_category_option(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """Create or reuse a normalized TRC-category option."""
     option = _upsert_standardized_option(db, TrcCategoryOption, payload.name, user.id)
     if option is None:
         raise HTTPException(status_code=400, detail="TRC option cannot be empty")
@@ -678,6 +715,7 @@ def create_trc_category_option(
 
 @router.post("", response_model=ProjectOut)
 def create_project(payload: ProjectCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Create a project, sync standardized options, audit the action, and snapshot initial version state."""
     data = payload.model_dump()
     data.pop("start_date", None)
     data.pop("end_date", None)
@@ -718,6 +756,7 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db), user: 
 
 @router.get("/{project_id}", response_model=ProjectOut)
 def get_project(project_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Return full project details after view-access authorization."""
     project = _get_project_or_404(db, project_id)
     _ensure_project_access(db, project, user, "view")
     return project
@@ -730,6 +769,7 @@ def update_project(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """Apply partial project updates, sync options, audit diff, and write a new version snapshot."""
     project = _get_project_or_404(db, project_id)
     _ensure_project_access(db, project, user, "edit")
 
@@ -775,6 +815,7 @@ def end_project(
     db: Session = Depends(get_db),
     user: User = Depends(require_role("admin")),
 ):
+    """Mark a project completed, add completion note, and record audit/version history (admin-only)."""
     project = _get_project_or_404(db, project_id)
 
     if project.start_date is None and project.created_at is not None:
@@ -820,6 +861,7 @@ def delete_project(
     db: Session = Depends(get_db),
     user: User = Depends(require_role("admin")),
 ):
+    """Delete a project and audit the deletion (admin-only)."""
     project = _get_project_or_404(db, project_id)
     db.delete(project)
     _log(db, user.id, "DELETE", "Project", project.id)
@@ -834,6 +876,7 @@ def add_update(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """Attach a status/update note to a project after access checks."""
     project = _get_project_or_404(db, project_id)
     _ensure_project_access(db, project, user, "add_update")
 
@@ -857,6 +900,7 @@ def list_updates(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """List project updates in reverse chronological order."""
     project = _get_project_or_404(db, project_id)
     _ensure_project_access(db, project, user, "view")
 
@@ -875,6 +919,7 @@ def add_project_funding(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """Add funding to a project, persist funding event, and record audit/version history."""
     project = _get_project_or_404(db, project_id)
     _ensure_project_access(db, project, user, "add_funding")
 
@@ -918,6 +963,7 @@ def list_project_funding_events(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """List funding events for a project in reverse chronological order."""
     project = _get_project_or_404(db, project_id)
     _ensure_project_access(db, project, user, "view")
 
@@ -935,6 +981,7 @@ def list_project_permissions(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """List project permission entries with resolved effective permission values."""
     project = _get_project_or_404(db, project_id)
     if not (_is_admin(user) or _is_owner(project, user) or _has_project_access(db, project, user, "manage_access")):
         raise HTTPException(status_code=403, detail="Not allowed")
@@ -960,6 +1007,7 @@ def upsert_project_permission(
     db: Session = Depends(get_db),
     actor_user: User = Depends(get_current_user),
 ):
+    """Create or update a project permission grant with level defaults and explicit overrides."""
     project = _get_project_or_404(db, project_id)
     if not (
         _is_admin(actor_user)
@@ -1049,6 +1097,7 @@ def delete_project_permission(
     db: Session = Depends(get_db),
     actor_user: User = Depends(get_current_user),
 ):
+    """Remove a project permission grant and audit the revocation."""
     project = _get_project_or_404(db, project_id)
     if not (
         _is_admin(actor_user)
@@ -1088,6 +1137,7 @@ def list_project_access_candidates(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """List users eligible to receive project access grants."""
     project = _get_project_or_404(db, project_id)
     if not (_is_admin(user) or _is_owner(project, user) or _has_project_access(db, project, user, "manage_access")):
         raise HTTPException(status_code=403, detail="Not allowed")
@@ -1100,6 +1150,7 @@ def list_project_versions(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """List stored project version snapshots metadata for a project."""
     project = _get_project_or_404(db, project_id)
     _ensure_project_access(db, project, user, "view")
 
@@ -1128,6 +1179,7 @@ def restore_project_version(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """Restore project fields from a selected snapshot and create a new restore version entry."""
     project = _get_project_or_404(db, project_id)
     _ensure_project_access(db, project, user, "edit")
 

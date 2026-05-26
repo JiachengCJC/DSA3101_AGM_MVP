@@ -1,3 +1,7 @@
+/**
+ * Create/edit form for project records.
+ * Loads standardized option catalogs, supports inline option creation, and submits normalized payloads.
+ */
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import api from '../api'

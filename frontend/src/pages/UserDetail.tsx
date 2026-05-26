@@ -1,3 +1,7 @@
+/**
+ * Admin user-profile page showing account metadata and project involvement.
+ * Fetches one user detail record and summarizes effective permission flags per project.
+ */
 import React, { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import api from '../api'

@@ -1,3 +1,7 @@
+/**
+ * Reusable password input with show/hide visibility toggle.
+ * Preserves native input props while enforcing password/text mode switching locally.
+ */
 import React, { InputHTMLAttributes, useId, useState } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 

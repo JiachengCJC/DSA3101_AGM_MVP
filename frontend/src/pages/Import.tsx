@@ -1,3 +1,7 @@
+/**
+ * CSV import page for AMGrant integration uploads.
+ * Submits multipart data to the ingest endpoint and surfaces created/updated counts.
+ */
 import React, { useState } from 'react'
 import api from '../api'
 

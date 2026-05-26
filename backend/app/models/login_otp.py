@@ -1,3 +1,5 @@
+"""ORM model for OTP challenges used in login and password-change flows."""
+
 import uuid
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, func
@@ -7,6 +9,7 @@ from app.db.base import Base
 
 
 class LoginOtpChallenge(Base):
+    """Represents a one-time-password challenge and its verification state."""
     __tablename__ = "login_otp_challenges"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))

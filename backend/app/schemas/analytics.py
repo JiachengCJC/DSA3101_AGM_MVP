@@ -1,23 +1,29 @@
+"""Pydantic response schemas for analytics endpoints."""
+
 from pydantic import BaseModel
 
 
 class CountByKey(BaseModel):
+    """Generic analytics row for grouped counts."""
     key: str
     count: int
 
 
 class FundingByKey(BaseModel):
+    """Grouped funding total keyed by a single dimension."""
     key: str
     amount_sgd: float
 
 
 class FundingByInstitutionDomain(BaseModel):
+    """Funding total keyed by institution and domain pair."""
     institution: str
     domain: str
     amount_sgd: float
 
 
 class ProjectCycle(BaseModel):
+    """Lifecycle timing and spend details for one project."""
     id: int
     title: str
     institution: str
@@ -34,6 +40,7 @@ class ProjectCycle(BaseModel):
 
 
 class OverdueOrInactiveProject(BaseModel):
+    """Risk-focused projection of projects needing attention."""
     id: int
     title: str
     institution: str
@@ -51,6 +58,7 @@ class OverdueOrInactiveProject(BaseModel):
 
 
 class PortfolioSnapshot(BaseModel):
+    """Top-level analytics response aggregating KPIs and detailed breakdowns."""
     total_projects: int
     active_projects: int
     total_spent_sgd: float

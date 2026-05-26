@@ -1,3 +1,7 @@
+/**
+ * Management dashboard page backed by `/analytics/portfolio`.
+ * Transforms analytics payloads into charts, cards, and risk-oriented tables.
+ */
 import React, { useEffect, useMemo, useState } from 'react'
 import api from '../api'
 import { useAuth } from '../auth'

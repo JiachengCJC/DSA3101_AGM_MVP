@@ -1,3 +1,7 @@
+/**
+ * Declares the application route tree and role-gated page access.
+ * Includes `RequireAuth` and `RequireRoles` wrappers to enforce authentication and authorization in the UI.
+ */
 import React from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from './auth'

@@ -1,3 +1,5 @@
+"""ORM model for user accounts and their project relationships."""
+
 from sqlalchemy import String, Integer, DateTime, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -5,6 +7,7 @@ from app.db.base import Base
 
 
 class User(Base):
+    """Represents a portal user and their role within the system."""
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)

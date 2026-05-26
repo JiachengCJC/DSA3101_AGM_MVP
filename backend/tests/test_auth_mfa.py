@@ -1,3 +1,5 @@
+"""Integration-style tests for OTP-based authentication and trusted-device behavior."""
+
 from datetime import datetime, timedelta
 from pathlib import Path
 import sys
@@ -23,6 +25,7 @@ from app.models.user import User
 
 @pytest.fixture()
 def auth_client(tmp_path, monkeypatch):
+    """Build a test app/client with isolated SQLite DB and mocked OTP email sender."""
     db_path = tmp_path / "test_auth_mfa.db"
     engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -32,6 +35,7 @@ def auth_client(tmp_path, monkeypatch):
     app.include_router(auth_routes.router, prefix=settings.API_V1_PREFIX)
 
     def override_get_db():
+        """Yield database sessions bound to the fixture-specific SQLite engine."""
         db = TestingSessionLocal()
         try:
             yield db
@@ -54,6 +58,7 @@ def auth_client(tmp_path, monkeypatch):
     state = {"sent_codes": []}
 
     def fake_send_login_otp_email(to_email: str, otp_code: str, full_name: str | None = None):
+        """Capture OTP email payloads in-memory instead of calling external email APIs."""
         state["sent_codes"].append({"email": to_email, "otp": otp_code, "full_name": full_name})
 
     monkeypatch.setattr(auth_routes, "send_login_otp_email", fake_send_login_otp_email)
@@ -65,6 +70,7 @@ def auth_client(tmp_path, monkeypatch):
 
 
 def _create_challenge(client: TestClient, state: dict, email: str = "user@example.com", password: str = "password") -> dict:
+    """Run credential login and assert that an OTP challenge (not JWT) is returned."""
     response = client.post(
         f"{settings.API_V1_PREFIX}/auth/token",
         data={"username": email, "password": password},
@@ -76,11 +82,13 @@ def _create_challenge(client: TestClient, state: dict, email: str = "user@exampl
 
 
 def _load_challenge(SessionLocal, challenge_id: str) -> LoginOtpChallenge:
+    """Load an OTP challenge row directly from the test database by challenge ID."""
     with SessionLocal() as db:
         return db.query(LoginOtpChallenge).filter(LoginOtpChallenge.id == challenge_id).first()
 
 
 def test_password_login_returns_otp_challenge_without_jwt(auth_client):
+    """Verify password login returns an OTP challenge payload and no immediate JWT."""
     client, SessionLocal, state = auth_client
 
     payload = _create_challenge(client, state)
@@ -92,6 +100,7 @@ def test_password_login_returns_otp_challenge_without_jwt(auth_client):
 
 
 def test_new_password_login_invalidates_previous_active_challenge(auth_client):
+    """Verify a new login challenge supersedes and invalidates the previous active challenge."""
     client, SessionLocal, state = auth_client
 
     first = _create_challenge(client, state)
@@ -106,6 +115,7 @@ def test_new_password_login_invalidates_previous_active_challenge(auth_client):
 
 
 def test_verify_exact_challenge_marks_used_and_returns_jwt(auth_client):
+    """Verify correct OTP marks the challenge as used and returns a JWT token."""
     client, SessionLocal, state = auth_client
 
     challenge_payload = _create_challenge(client, state)
@@ -123,6 +133,7 @@ def test_verify_exact_challenge_marks_used_and_returns_jwt(auth_client):
 
 
 def test_used_otp_cannot_be_reused(auth_client):
+    """Verify an already-used OTP challenge cannot be reused."""
     client, SessionLocal, state = auth_client
 
     challenge_payload = _create_challenge(client, state)
@@ -143,6 +154,7 @@ def test_used_otp_cannot_be_reused(auth_client):
 
 
 def test_wrong_otp_increments_attempts_and_locks_on_fifth_failure(auth_client):
+    """Verify failed OTP attempts increment counters and lock the challenge on the configured limit."""
     client, SessionLocal, state = auth_client
 
     challenge_payload = _create_challenge(client, state)
@@ -172,6 +184,7 @@ def test_wrong_otp_increments_attempts_and_locks_on_fifth_failure(auth_client):
 
 
 def test_remembered_device_skips_otp_for_one_hour(auth_client):
+    """Verify trusted-device cookie allows a subsequent login to bypass OTP during validity window."""
     client, _, state = auth_client
 
     challenge_payload = client.post(
@@ -201,6 +214,7 @@ def test_remembered_device_skips_otp_for_one_hour(auth_client):
 
 
 def test_expired_remembered_device_requires_otp_again(auth_client):
+    """Verify expired trusted-device tokens no longer bypass OTP and require new challenge."""
     client, SessionLocal, state = auth_client
 
     challenge_payload = client.post(
@@ -231,6 +245,7 @@ def test_expired_remembered_device_requires_otp_again(auth_client):
 
 
 def test_logout_keeps_remembered_device(auth_client):
+    """Verify logout does not revoke trusted-device cookie/token by default."""
     client, SessionLocal, state = auth_client
 
     challenge_payload = client.post(
@@ -265,6 +280,7 @@ def test_logout_keeps_remembered_device(auth_client):
 
 
 def test_expired_otp_returns_expected_message(auth_client):
+    """Verify expired OTP challenge returns the expected validation error message."""
     client, SessionLocal, state = auth_client
 
     challenge_payload = _create_challenge(client, state)
@@ -283,6 +299,7 @@ def test_expired_otp_returns_expected_message(auth_client):
 
 
 def test_resend_before_cooldown_is_blocked(auth_client):
+    """Verify OTP resend requests are rejected while cooldown is still active."""
     client, _, state = auth_client
 
     challenge_payload = _create_challenge(client, state)
@@ -296,6 +313,7 @@ def test_resend_before_cooldown_is_blocked(auth_client):
 
 
 def test_resend_creates_new_challenge_and_old_one_reports_newer_code(auth_client):
+    """Verify resend creates a new challenge and old challenge reports superseded state."""
     client, SessionLocal, state = auth_client
 
     first = _create_challenge(client, state)
@@ -321,9 +339,11 @@ def test_resend_creates_new_challenge_and_old_one_reports_newer_code(auth_client
 
 
 def test_email_send_failure_invalidates_created_challenge(auth_client, monkeypatch):
+    """Verify OTP email delivery failure invalidates the generated challenge."""
     client, SessionLocal, _ = auth_client
 
     def failing_send_login_otp_email(*args, **kwargs):
+        """Force OTP email delivery to fail so error-handling path can be asserted."""
         raise EmailDeliveryError("boom")
 
     monkeypatch.setattr(auth_routes, "send_login_otp_email", failing_send_login_otp_email)
@@ -343,6 +363,7 @@ def test_email_send_failure_invalidates_created_challenge(auth_client, monkeypat
 
 
 def test_seed_demo_emails_match_expected_values(tmp_path):
+    """Verify seeded demo-account emails match expected addresses used by OTP bypass logic."""
     db_path = tmp_path / "seed_demo.db"
     engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

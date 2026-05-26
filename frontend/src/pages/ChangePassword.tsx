@@ -1,3 +1,7 @@
+/**
+ * Page workflow for initiating and completing password changes with OTP confirmation.
+ * Handles request, verify, resend, cooldown tracking, and user feedback states.
+ */
 import React, { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import api from '../api'

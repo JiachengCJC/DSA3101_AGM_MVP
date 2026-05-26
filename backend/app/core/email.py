@@ -1,13 +1,17 @@
+"""Email-delivery helpers used by authentication flows."""
+
 import httpx
 
 from app.core.config import settings
 
 
 class EmailDeliveryError(Exception):
+    """Raised when OTP email delivery fails or cannot be completed."""
     pass
 
 
 def send_login_otp_email(to_email: str, otp_code: str, full_name: str | None = None) -> None:
+    """Send the login/password-change OTP email via Resend and raise `EmailDeliveryError` on failure."""
     if not settings.RESEND_API_KEY:
         raise EmailDeliveryError("RESEND_API_KEY is not configured")
 

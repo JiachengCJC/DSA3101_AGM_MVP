@@ -1,3 +1,7 @@
+/**
+ * Authentication context/provider for login, OTP verification, resend, and logout.
+ * Persists JWT state, derives identity claims, and refreshes profile details from `/auth/me`.
+ */
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import api from './api'
 

@@ -1,3 +1,7 @@
+/**
+ * Primary authenticated shell layout for navigation, account menu, and page outlet.
+ * Also renders the assistant panel beside routed content on larger screens.
+ */
 import React, { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth'

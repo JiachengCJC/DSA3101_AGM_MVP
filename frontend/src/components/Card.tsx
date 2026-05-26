@@ -1,3 +1,7 @@
+/**
+ * Reusable KPI card component used across dashboard-style views.
+ * Displays title, value, and optional subtitle in a consistent visual treatment.
+ */
 import React from 'react'
 
 export function Card({ title, value, subtitle }: { title: string; value: string | number; subtitle?: string }) {

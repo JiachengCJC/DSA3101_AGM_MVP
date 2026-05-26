@@ -1,3 +1,5 @@
+"""FastAPI application bootstrap, middleware wiring, route registration, and startup initialization."""
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from jose import JWTError, jwt
@@ -11,11 +13,10 @@ from app.models.audit import AuditLog
 from app.models.user import User
 from app.api.routes import auth, projects, analytics, ingest, assistant
 
-# If the table is empty, it automatically creates three "Demo" users.
+# Seed predictable demo identities for MVP demos and local testing.
 def _seed_users() -> None:
-    """Seed demo users if DB is empty (MVP only)."""
-    # It is a temporary, secure "bridge" that allows your Python code to translate and send data to your database 
-    # and then safely disconnect so the system stays fast and organized.
+    """Seed/update demo users used by the MVP environment when they are missing."""
+    # Open a short-lived session so startup seeding does not leak connections.
     db: Session = SessionLocal()
     try:
         existing_emails = {email for (email,) in db.query(User.email).all()}
@@ -79,36 +80,30 @@ def _seed_users() -> None:
             changed = True
 
         if changed:
-            db.commit() # Save these IDs into the permanent filing cabinet (the Database).
+            db.commit()
     finally:
         db.close()
 
-# Create the APP
+# Build the FastAPI application instance.
 app = FastAPI(title=settings.APP_NAME)
 
-# (http://localhost:5173,http://localhost:3000) and turns it into a Python list.
+# Parse allowed CORS origins from comma-separated configuration.
 origins = [o.strip() for o in settings.BACKEND_CORS_ORIGINS.split(",") if o.strip()]
 
-# set what website can talk to your API(backend).
-"""
-In Production (prod): It only allows the specific addresses in your origins list 
-(like your real website URL).
-
-In Development: It uses ["*"], which is a Wildcard. It tells the browser: "Let any website talk to me." 
-This makes your life easier while coding so you don't get blocked during testing.
-"""
+# CORS is restricted to configured origins; credentials are enabled for cookie-based MFA flows.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_credentials=True, # It’s okay to send sensitive info.
-    allow_methods=["*"], # This defines what actions the guest can take. Using ["*"] means: "I allow all types of actions."
-    allow_headers=["*"], # what extra info can be sent in the request "envelope". ["*"] means: "I accept all types of headers."
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
 @app.middleware("http")
 async def audit_request_middleware(request: Request, call_next):
     # Record every authenticated API action as a durable audit trail.
+    """Record authenticated API requests into the audit log with method/path/status metadata."""
     actor_user_id: int | None = None
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
@@ -158,21 +153,22 @@ async def audit_request_middleware(request: Request, call_next):
 
     return response
 
-# Your app is split into different files (Auth, Projects, Analytics). 
-# These lines act like extension cords, plugging those specific features into the main app.
+# Register feature routers under the configured API prefix.
 app.include_router(auth.router, prefix=settings.API_V1_PREFIX)
 app.include_router(projects.router, prefix=settings.API_V1_PREFIX)
 app.include_router(analytics.router, prefix=settings.API_V1_PREFIX)
 app.include_router(ingest.router, prefix=settings.API_V1_PREFIX)
 app.include_router(assistant.router, prefix=settings.API_V1_PREFIX)
 
-# This function runs automatically the moment you start the server.
+# Startup hook: initialize DB state before handling requests.
 @app.on_event("startup")
 def on_startup() -> None:
-    init_db() # Checks the database and creates any missing tables.
-    _seed_users() # adds the "Demo" users if the database is empty.
+    """Initialize database schema/state and seed demo accounts during app startup."""
+    init_db()
+    _seed_users()
 
 
 @app.get("/health")
 def health():
+    """Lightweight health-check endpoint used by infrastructure probes."""
     return {"status": "ok"}

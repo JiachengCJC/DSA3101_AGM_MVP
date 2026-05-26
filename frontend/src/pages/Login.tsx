@@ -1,3 +1,7 @@
+/**
+ * Login page with two-step authentication flow.
+ * Handles credential submission, OTP verification/resend, trusted-device preference, and cooldown UI.
+ */
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { LoginChallenge, useAuth } from '../auth'

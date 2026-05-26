@@ -1,3 +1,5 @@
+"""ORM models for project access levels, per-user project permissions, and project version snapshots."""
+
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -49,6 +51,7 @@ PROJECT_ACCESS_LEVEL_DEFINITIONS: dict[str, dict[str, object]] = {
 
 
 class ProjectAccessLevel(Base):
+    """Defines a named access role and its default permission matrix."""
     __tablename__ = "project_access_levels"
 
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -68,6 +71,7 @@ class ProjectAccessLevel(Base):
 
 
 class ProjectPermission(Base):
+    """Stores per-user, per-project access grants and optional permission overrides."""
     __tablename__ = "project_permissions"
     __table_args__ = (UniqueConstraint("project_id", "user_id", name="uq_project_permission_project_user"),)
 
@@ -105,6 +109,7 @@ class ProjectPermission(Base):
 
 
 class ProjectVersion(Base):
+    """Captures immutable project snapshots for restore and audit history."""
     __tablename__ = "project_versions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

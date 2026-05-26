@@ -1,3 +1,5 @@
+"""Primary ORM model for the project registry and its lifecycle metadata."""
+
 from sqlalchemy import (
     String,
     Integer,
@@ -14,6 +16,7 @@ from app.db.base import Base
 
 
 class Project(Base):
+    """Represents a tracked AI project with lifecycle, funding, and collaboration metadata."""
     __tablename__ = "projects"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -39,6 +42,7 @@ class Project(Base):
     
     @validates("grant_end_date")
     def validate_grant_end(self, key, value):
+        """Validate that grant end date does not precede grant start date."""
         if self.grant_start_date and value and value < self.grant_start_date:
             raise ValueError("grant_end_date cannot be before grant_start_date")
         return value

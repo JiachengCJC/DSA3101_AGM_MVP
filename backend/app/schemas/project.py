@@ -1,3 +1,5 @@
+"""Pydantic schemas for project CRUD, funding, updates, permissions, and option catalogs."""
+
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
@@ -5,6 +7,7 @@ from pydantic import BaseModel, Field
 
 
 class ProjectBase(BaseModel):
+    """Shared project fields used by create, update, and read schemas."""
     title: str
     institution: str
     domain: str
@@ -37,12 +40,12 @@ class ProjectBase(BaseModel):
 
 
 class ProjectCreate(ProjectBase):
+    """Request payload for creating a project."""
     pass
 
-# this schema overrides the strict required fields from ProjectBase and makes them optional (str | None = None). 
-# This allows the user to send just a new title without having to resend the domain.
+# Same fields as `ProjectBase`, but optional to support PATCH semantics.
 class ProjectUpdate(ProjectBase):
-    # allow partial updates
+    """Partial-update payload for modifying an existing project."""
     title: str | None = None
     institution: str | None = None
     domain: str | None = None
@@ -50,7 +53,7 @@ class ProjectUpdate(ProjectBase):
 
 
 class ProjectOut(ProjectBase):
-    # adds fields that the database generates automatically (like the ID and timestamps).
+    """Full project payload returned by project endpoints."""
     id: int
     owner_id: int
     created_at: datetime
@@ -58,6 +61,7 @@ class ProjectOut(ProjectBase):
 
 
 class ProjectPersonBrief(BaseModel):
+    """Lightweight user summary for project participation lists."""
     user_id: int
     email: str
     full_name: str | None
@@ -65,6 +69,7 @@ class ProjectPersonBrief(BaseModel):
 
 
 class ProjectListItem(BaseModel):
+    """List-view projection of a project with visibility-safe fields."""
     id: int
     title: str
     people_involved: list[ProjectPersonBrief]
@@ -81,20 +86,24 @@ class ProjectListItem(BaseModel):
 
 
 class ProjectUpdateCreate(BaseModel):
+    """Payload for adding a project update note."""
     status: str = "Update"
     note: str
 
 
 class ProjectEndRequest(BaseModel):
+    """Optional note payload when marking a project as ended."""
     note: str | None = None
 
 
 class ProjectFundingEventCreate(BaseModel):
+    """Payload for recording additional project funding."""
     amount_sgd: Decimal = Field(gt=0)
     note: str | None = None
 
 
 class ProjectUpdateOut(BaseModel):
+    """Response schema for a persisted project update entry."""
     id: int
     project_id: int
     author_user_id: int
@@ -104,6 +113,7 @@ class ProjectUpdateOut(BaseModel):
 
 
 class ProjectFundingEventOut(BaseModel):
+    """Response schema for a persisted funding event entry."""
     id: int
     project_id: int
     author_user_id: int
@@ -116,6 +126,7 @@ ProjectAccessLevel = Literal["principal_investigator", "team_member", "viewer"]
 
 
 class ProjectPermissionBase(BaseModel):
+    """Base permission flags plus access-level key for project access grants."""
     access_level: ProjectAccessLevel = "viewer"
     can_view: bool = False
     can_edit: bool = False
@@ -125,10 +136,12 @@ class ProjectPermissionBase(BaseModel):
 
 
 class ProjectPermissionGrant(ProjectPermissionBase):
+    """Payload for creating or updating a project permission grant."""
     user_id: int
 
 
 class ProjectPermissionOut(ProjectPermissionBase):
+    """Response payload for project permission entries with resolved overrides."""
     id: int
     project_id: int
     user_id: int
@@ -146,6 +159,7 @@ class ProjectPermissionOut(ProjectPermissionBase):
 
 
 class ProjectVersionOut(BaseModel):
+    """Response row for project version history."""
     id: int
     project_id: int
     actor_user_id: int
@@ -154,6 +168,7 @@ class ProjectVersionOut(BaseModel):
 
 
 class ProjectFieldOptionsOut(BaseModel):
+    """Bundled option lists used by project forms."""
     institution: list[str]
     domain: list[str]
     ai_type: list[str]
@@ -163,10 +178,12 @@ class ProjectFieldOptionsOut(BaseModel):
 
 
 class ProjectOptionCreate(BaseModel):
+    """Payload for creating a standardized option entry."""
     name: str = Field(min_length=1, max_length=128)
 
 
 class ProjectOptionOut(BaseModel):
+    """Response payload for a standardized option entry."""
     id: int
     name: str
     created_by_user_id: int | None

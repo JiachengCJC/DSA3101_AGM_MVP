@@ -1,3 +1,5 @@
+"""Analytics endpoints and helper computations for portfolio summaries, funding views, and risk signals."""
+
 from collections import Counter, defaultdict
 from datetime import date, datetime, time, timezone
 import re
@@ -25,11 +27,13 @@ INACTIVE_PROJECT_DAYS = 90
 
 
 def _clean_key(value: str | None) -> str:
+    """Normalize optional grouping values by trimming whitespace and replacing blanks with `"Unknown"`."""
     cleaned = (value or "").strip()
     return cleaned if cleaned else "Unknown"
 
 
 def _to_utc(dt: datetime | None) -> datetime | None:
+    """Convert datetimes to UTC while safely handling `None` and naive timestamps."""
     if dt is None:
         return None
     if dt.tzinfo is None:
@@ -38,6 +42,7 @@ def _to_utc(dt: datetime | None) -> datetime | None:
 
 
 def _counts_from_values(values: list[str]) -> list[CountByKey]:
+    """Build a descending frequency table from a list of normalized labels."""
     counter: Counter[str] = Counter(values)
     return [
         CountByKey(key=key, count=count)
@@ -46,11 +51,13 @@ def _counts_from_values(values: list[str]) -> list[CountByKey]:
 
 
 def _count_by(projects: list[Project], key_fn) -> list[CountByKey]:
+    """Aggregate project counts by a caller-provided key extractor."""
     values = [_clean_key(key_fn(project)) for project in projects]
     return _counts_from_values(values)
 
 
 def _funding_by(projects: list[Project], key_fn) -> list[FundingByKey]:
+    """Aggregate total funding by a caller-provided project key."""
     totals: defaultdict[str, float] = defaultdict(float)
     for project in projects:
         totals[_clean_key(key_fn(project))] += float(project.funding_amount_sgd or 0)
@@ -61,6 +68,7 @@ def _funding_by(projects: list[Project], key_fn) -> list[FundingByKey]:
 
 
 def _funding_by_institution_and_domain(projects: list[Project]) -> list[FundingByInstitutionDomain]:
+    """Aggregate funding by `(institution, domain)` combinations."""
     totals: defaultdict[tuple[str, str], float] = defaultdict(float)
     for project in projects:
         institution = _clean_key(project.institution)
@@ -79,6 +87,7 @@ def _funding_by_institution_and_domain(projects: list[Project]) -> list[FundingB
 
 
 def _parse_trl_level(trl_level: str | None) -> int | None:
+    """Extract the numeric TRL level from free-form TRL labels such as `"TRL 6 - ..."`."""
     if not trl_level:
         return None
     match = re.search(r"trl\s*(\d+)", trl_level, flags=re.IGNORECASE)
@@ -91,6 +100,7 @@ def _parse_trl_level(trl_level: str | None) -> int | None:
 
 
 def _deployment_status(project: Project) -> str:
+    """Map project completion/TRL state to a coarse deployment status bucket."""
     if project.end_date is not None:
         return "Completed"
 
@@ -107,6 +117,7 @@ def _deployment_status(project: Project) -> str:
 
 
 def _governance_status(project: Project) -> str:
+    """Infer governance status from collaboration-signoff and AI-office involvement fields."""
     collaboration = _clean_key(project.collaboration_formal_signed).lower()
     has_ai_office = bool((project.ai_office_involvement or "").strip())
 
@@ -118,6 +129,7 @@ def _governance_status(project: Project) -> str:
 
 
 def _project_due_date(project: Project) -> date | None:
+    """Return the date used as the project's deadline reference."""
     return project.grant_end_date
 
 
@@ -126,6 +138,7 @@ def _project_activity_flags(
     now: datetime,
     completed_project_ids: set[int],
 ) -> tuple[int, bool, bool, bool, date | None, datetime]:
+    """Compute staleness and deadline flags used by overdue/inactive and risk calculations."""
     last_activity = _to_utc(project.updated_at) or _to_utc(project.created_at) or now
     days_since_update = max((now.date() - last_activity.date()).days, 0)
 
@@ -139,6 +152,7 @@ def _project_activity_flags(
 
 
 def _risk_level(project: Project, days_since_update: int, is_past_due: bool) -> str:
+    """Score a project and classify it into `Low`, `Medium`, or `High` operational risk."""
     score = 0
 
     if days_since_update > INACTIVE_PROJECT_DAYS:
@@ -168,6 +182,7 @@ def _project_cycles(
     completed_at_by_project: dict[int, datetime],
     now: datetime,
 ) -> list[ProjectCycle]:
+    """Build project lifecycle rows with normalized timestamps and derived duration metrics."""
     rows: list[ProjectCycle] = []
 
     for project in projects:
@@ -211,6 +226,7 @@ def _overdue_or_inactive_projects(
     now: datetime,
     completed_project_ids: set[int],
 ) -> list[OverdueOrInactiveProject]:
+    """Return sorted projects that are overdue, inactive, or past grant due date."""
     rows: list[OverdueOrInactiveProject] = []
 
     for project in projects:
@@ -266,6 +282,7 @@ def portfolio_snapshot(
     db: Session = Depends(get_db),
     _user=Depends(require_role("management", "admin")),
 ):
+    """Return a full portfolio analytics snapshot for management/admin users."""
     now = datetime.now(timezone.utc)
     projects = db.query(Project).order_by(Project.created_at.desc()).all()
 

@@ -1,3 +1,5 @@
+"""CSV ingestion endpoint for AMGrant data and shared helpers for audit/version snapshots."""
+
 import csv
 import io
 from datetime import date
@@ -43,6 +45,7 @@ SNAPSHOT_FIELDS = (
 
 
 def _project_snapshot(project: Project) -> dict[str, str | float | int | None]:
+    """Serialize project fields into a versionable snapshot payload for audit/history tables."""
     snapshot: dict[str, str | float | int | None] = {}
     for field in SNAPSHOT_FIELDS:
         value = getattr(project, field)
@@ -61,13 +64,7 @@ async def ingest_amgrant_csv(
     db: Session = Depends(get_db),
     user=Depends(require_role("management", "admin")),
 ):
-    """Read-only integration MVP.
-
-    Expected columns (mocked):
-    - title,institution,domain,ai_type,lifecycle_stage,trl_level,trc_category,funding_amount_sgd,grant_year_obtained
-
-    For conflicts: we create a new Project if exact title+institution does not exist; otherwise update fields.
-    """
+    """Import AMGrant CSV rows by upserting projects and recording matching audit/version entries."""
     if not file.filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="Please upload a .csv file")
 
@@ -78,6 +75,7 @@ async def ingest_amgrant_csv(
     updated = 0
 
     def parse_date(raw: str | None):
+        """Parse an ISO date string from CSV input; return `None` for blanks or invalid values."""
         value = (raw or "").strip()
         if not value:
             return None
@@ -90,8 +88,7 @@ async def ingest_amgrant_csv(
         title = (row.get("title") or "").strip()
         institution = (row.get("institution") or "").strip()
 
-        # If the row is missing a title or institution (maybe 
-        # it's a blank row at the end of the file), it skips it and moves to the next one.
+        # Skip rows that do not have the minimum natural key used for upsert matching.
         if not title or not institution:
             continue
 
@@ -102,9 +99,7 @@ async def ingest_amgrant_csv(
             .first()
         )
 
-        # The or "Default Value" logic ensures that if the CSV leaves a cell blank, 
-        # your database won't complain about missing data; 
-        # it will just slot in a safe default (like "General" or "Medium").
+        # Apply conservative defaults so partial CSV rows still produce valid project records.
         fields = {
             "domain": (row.get("domain") or "General").strip(),
             "ai_type": (row.get("ai_type") or "Unknown").strip(),
@@ -147,9 +142,9 @@ async def ingest_amgrant_csv(
             except ValueError:
                 pass
 
-        # If the database lookup earlier found nothing, we create a new Project
+        # Insert or update based on (title, institution) natural key.
         if project is None:
-            # For MVP: ingested projects owned by management user to keep simple.
+            # MVP simplification: imported projects are attributed to the importing manager/admin.
             project = Project(
                 title=title,
                 institution=institution,

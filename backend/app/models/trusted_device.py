@@ -1,3 +1,5 @@
+"""ORM model for remembered-device records tied to MFA."""
+
 import uuid
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, func
@@ -7,6 +9,7 @@ from app.db.base import Base
 
 
 class TrustedDevice(Base):
+    """Stores hashed trusted-device tokens and expiry metadata for MFA bypass."""
     __tablename__ = "trusted_devices"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))

@@ -1,3 +1,7 @@
+/**
+ * Admin user-management page for account provisioning and revocation.
+ * Supports creating users, listing directory entries, and deleting non-self accounts.
+ */
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../api'

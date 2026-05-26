@@ -1,3 +1,7 @@
+/**
+ * Project listing page with client-side filtering, sorting, and quick navigation.
+ * Applies access-aware field visibility based on backend response flags.
+ */
 import React, { useEffect, useState, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import api from '../api'

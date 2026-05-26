@@ -1,3 +1,5 @@
+"""Authentication and account-management endpoints, including OTP MFA and trusted-device support."""
+
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, status
@@ -43,10 +45,12 @@ OTP_BYPASS_EMAILS = {
 
 
 def _utcnow() -> datetime:
+    """Return the current UTC timestamp for consistent OTP and cookie expiry checks."""
     return datetime.now(timezone.utc)
 
 
 def _mask_email(email: str) -> str:
+    """Mask the local part of an email address for challenge responses."""
     local_part, _, domain = email.partition("@")
     if len(local_part) <= 2:
         masked_local = f"{local_part[:1]}***"
@@ -56,6 +60,7 @@ def _mask_email(email: str) -> str:
 
 
 def _serialize_challenge(challenge: LoginOtpChallenge, user: User) -> LoginOtpChallengeOut:
+    """Convert an OTP challenge row into a client-facing challenge payload."""
     message = "OTP sent to your email"
     if challenge.purpose == OTP_PURPOSE_PASSWORD_CHANGE:
         message = "OTP sent to your registered email to confirm password change"
@@ -69,10 +74,12 @@ def _serialize_challenge(challenge: LoginOtpChallenge, user: User) -> LoginOtpCh
 
 
 def _trusted_device_expiry(now: datetime) -> datetime:
+    """Compute the trusted-device expiry timestamp from the configured retention window."""
     return now + timedelta(hours=settings.TRUSTED_DEVICE_EXPIRE_HOURS)
 
 
 def _set_trusted_device_cookie(response: Response, token: str, expires_at: datetime) -> None:
+    """Set an HTTP-only trusted-device cookie with secure expiry metadata."""
     max_age = max(0, int((expires_at - _utcnow()).total_seconds()))
     response.set_cookie(
         key=settings.TRUSTED_DEVICE_COOKIE_NAME,
@@ -87,6 +94,7 @@ def _set_trusted_device_cookie(response: Response, token: str, expires_at: datet
 
 
 def _clear_trusted_device_cookie(response: Response) -> None:
+    """Delete the trusted-device cookie from the response."""
     response.delete_cookie(
         key=settings.TRUSTED_DEVICE_COOKIE_NAME,
         httponly=True,
@@ -97,6 +105,7 @@ def _clear_trusted_device_cookie(response: Response) -> None:
 
 
 def _consume_trusted_device_cookie(request: Request) -> str | None:
+    """Read the trusted-device token from request cookies when present."""
     token = request.cookies.get(settings.TRUSTED_DEVICE_COOKIE_NAME)
     if not token:
         return None
@@ -104,6 +113,7 @@ def _consume_trusted_device_cookie(request: Request) -> str | None:
 
 
 def _find_valid_trusted_device(db: Session, user_id: int, token: str, now: datetime) -> TrustedDevice | None:
+    """Lookup and validate a trusted-device token for a user; prune expired rows."""
     token_hash = hash_device_token(token)
     trusted_device = (
         db.query(TrustedDevice)
@@ -123,6 +133,7 @@ def _find_valid_trusted_device(db: Session, user_id: int, token: str, now: datet
 
 
 def _issue_trusted_device(db: Session, user: User, now: datetime) -> tuple[TrustedDevice, str]:
+    """Create and persist a new trusted-device row, returning both DB row and raw token."""
     device_token = generate_device_token()
     trusted_device = TrustedDevice(
         user_id=user.id,
@@ -136,6 +147,7 @@ def _issue_trusted_device(db: Session, user: User, now: datetime) -> tuple[Trust
 
 
 def _revoke_trusted_device_by_token(db: Session, user_id: int, token: str | None) -> bool:
+    """Delete a trusted-device row by token for the given user."""
     if not token:
         return False
     trusted_device = (
@@ -153,6 +165,7 @@ def _revoke_trusted_device_by_token(db: Session, user_id: int, token: str | None
 
 
 def _log_audit(db: Session, actor_user_id: int, action: str, entity_type: str, entity_id: int, diff: dict) -> None:
+    """Append a normalized audit-log entry without committing the transaction."""
     db.add(
         AuditLog(
             actor_user_id=actor_user_id,
@@ -171,6 +184,7 @@ def _invalidate_active_challenges(
     now: datetime,
     exclude_id: str | None = None,
 ) -> None:
+    """Invalidate all still-active OTP challenges for a user, optionally excluding one challenge."""
     query = db.query(LoginOtpChallenge).filter(
         LoginOtpChallenge.user_id == user_id,
         LoginOtpChallenge.used_at.is_(None),
@@ -185,6 +199,7 @@ def _invalidate_active_challenges(
 
 
 def _find_newer_challenge(db: Session, challenge: LoginOtpChallenge) -> LoginOtpChallenge | None:
+    """Return the newest OTP challenge generated after the provided challenge."""
     return (
         db.query(LoginOtpChallenge)
         .filter(
@@ -204,6 +219,7 @@ def _create_challenge(
     purpose: str = OTP_PURPOSE_LOGIN,
     pending_password_hash: str | None = None,
 ) -> tuple[LoginOtpChallenge, str]:
+    """Create a new OTP challenge row and return it together with the plaintext OTP code."""
     otp_code = generate_numeric_otp()
     challenge = LoginOtpChallenge(
         user_id=user.id,
@@ -221,6 +237,7 @@ def _create_challenge(
 
 
 def _send_challenge_email(db: Session, challenge: LoginOtpChallenge, user: User, otp_code: str, now: datetime) -> None:
+    """Send OTP email and convert delivery failures into invalidated challenges plus HTTP 502."""
     try:
         send_login_otp_email(user.email, otp_code, user.full_name)
     except EmailDeliveryError as exc:
@@ -245,6 +262,7 @@ def _send_challenge_email(db: Session, challenge: LoginOtpChallenge, user: User,
 
 
 def _load_challenge_or_404(db: Session, challenge_id: str) -> LoginOtpChallenge:
+    """Load an OTP challenge by ID or raise a 404 error if it does not exist."""
     challenge = db.query(LoginOtpChallenge).filter(LoginOtpChallenge.id == challenge_id).first()
     if challenge is None:
         raise HTTPException(status_code=404, detail="OTP challenge not found.")
@@ -252,11 +270,13 @@ def _load_challenge_or_404(db: Session, challenge_id: str) -> LoginOtpChallenge:
 
 
 def _ensure_challenge_user(challenge: LoginOtpChallenge, user: User) -> None:
+    """Ensure the challenge belongs to the current user before continuing."""
     if challenge.user_id != user.id:
         raise HTTPException(status_code=403, detail="Not allowed")
 
 
 def _ensure_resend_allowed(db: Session, challenge: LoginOtpChallenge, now: datetime) -> None:
+    """Enforce resend cooldown and challenge validity before issuing a replacement OTP."""
     if challenge.used_at is not None:
         raise HTTPException(status_code=400, detail="OTP already used. Generate a new OTP.")
     if challenge.invalidated_at is not None and challenge.invalidation_reason == OTP_SUPERSEDED:
@@ -269,6 +289,7 @@ def _ensure_resend_allowed(db: Session, challenge: LoginOtpChallenge, now: datet
 
 
 def _validate_submitted_challenge_state(db: Session, challenge: LoginOtpChallenge, now: datetime) -> None:
+    """Validate OTP challenge state before verifying a submitted OTP value."""
     if challenge.used_at is not None:
         raise HTTPException(status_code=400, detail="OTP already used. Generate a new OTP.")
     if challenge.invalidated_at is not None:
@@ -292,6 +313,7 @@ def register(
     db: Session = Depends(get_db),
     _user=Depends(require_role("admin")),
 ):
+    """Create a new user account (admin-only) and audit the action."""
     existing = db.query(User).filter(User.email == payload.email).first()
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -323,6 +345,7 @@ def list_users(
     db: Session = Depends(get_db),
     _user=Depends(require_role("admin")),
 ):
+    """List all users ordered by creation time (admin-only)."""
     return db.query(User).order_by(User.created_at.desc()).all()
 
 
@@ -332,6 +355,7 @@ def get_user_detail(
     db: Session = Depends(get_db),
     _user=Depends(require_role("admin")),
 ):
+    """Return expanded user details, including project access and recent activity (admin-only)."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -421,6 +445,7 @@ def delete_user(
     db: Session = Depends(get_db),
     admin_user=Depends(require_role("admin")),
 ):
+    """Delete a user safely after ownership and minimum-admin guard checks."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -472,6 +497,7 @@ def delete_user(
 
 @router.get("/me", response_model=UserOut)
 def me(user=Depends(get_current_user)):
+    """Return the currently authenticated user profile."""
     return user
 
 
@@ -483,6 +509,7 @@ def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
+    """Authenticate credentials and either return JWT directly or start OTP challenge flow."""
     user = db.query(User).filter(User.email == form_data.username).first()
     if not user or not verify_password(form_data.password, user.hashed_password):
         if user:
@@ -557,6 +584,7 @@ def login(
 
 @router.post("/otp/resend", response_model=LoginOtpChallengeOut)
 def resend_otp(payload: OtpResendIn, db: Session = Depends(get_db)):
+    """Issue a fresh login OTP challenge after cooldown and invalidate superseded challenges."""
     challenge = _load_challenge_or_404(db, payload.challenge_id)
     if challenge.purpose != OTP_PURPOSE_LOGIN:
         raise HTTPException(status_code=400, detail="Use the password change resend flow for this OTP.")
@@ -595,6 +623,7 @@ def resend_otp(payload: OtpResendIn, db: Session = Depends(get_db)):
 
 @router.post("/otp/verify", response_model=Token)
 def verify_login_otp(payload: OtpVerifyIn, request: Request, response: Response, db: Session = Depends(get_db)):
+    """Verify login OTP, issue JWT, and optionally mint/remove trusted-device state."""
     challenge = _load_challenge_or_404(db, payload.challenge_id)
     if challenge.purpose != OTP_PURPOSE_LOGIN:
         raise HTTPException(status_code=400, detail="Use the password change verification flow for this OTP.")
@@ -665,6 +694,7 @@ def logout(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """Log a logout event and return a confirmation message."""
     _log_audit(
         db,
         actor_user_id=user.id,
@@ -683,6 +713,7 @@ def request_password_change(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """Start password-change flow by validating current password and sending OTP challenge."""
     current_password = payload.current_password
     new_password = payload.new_password
 
@@ -723,6 +754,7 @@ def resend_password_change_otp(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """Resend password-change OTP challenge for the authenticated user."""
     challenge = _load_challenge_or_404(db, payload.challenge_id)
     _ensure_challenge_user(challenge, user)
     if challenge.purpose != OTP_PURPOSE_PASSWORD_CHANGE:
@@ -763,6 +795,7 @@ def verify_password_change(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """Finalize password change after OTP verification and persist the new password hash."""
     challenge = _load_challenge_or_404(db, payload.challenge_id)
     _ensure_challenge_user(challenge, user)
     if challenge.purpose != OTP_PURPOSE_PASSWORD_CHANGE:

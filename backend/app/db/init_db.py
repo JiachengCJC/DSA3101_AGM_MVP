@@ -1,3 +1,5 @@
+"""Database bootstrap plus lightweight runtime schema migration helpers for MVP environments."""
+
 from sqlalchemy import inspect, text
 
 from app.db.base import Base
@@ -20,7 +22,8 @@ from app.models.access import (
 
 
 def _ensure_project_schema_columns() -> None:
-    # Minimal runtime schema migration for existing project databases.
+    # Runtime guardrail for environments that are behind the latest schema.
+    """Apply additive schema fixes for legacy `projects` tables in existing deployments."""
     if engine.dialect.name != "postgresql":
         return
 
@@ -76,7 +79,8 @@ def _ensure_project_schema_columns() -> None:
 
 
 def _cleanup_legacy_schema() -> None:
-    # Keep schema aligned with current product requirements on existing DBs.
+    # Remove deprecated columns/tables that are no longer used by current APIs.
+    """Remove deprecated project columns/tables left from earlier MVP iterations."""
     if engine.dialect.name != "postgresql":
         return
 
@@ -94,7 +98,8 @@ def _cleanup_legacy_schema() -> None:
 
 
 def _ensure_project_permission_role_columns() -> None:
-    # Minimal runtime migration for existing permission databases.
+    # Ensure permission tables can represent role defaults plus per-user overrides.
+    """Ensure role-based permission columns exist on `project_permissions`."""
     with engine.begin() as conn:
         table_names = set(inspect(conn).get_table_names())
         if "project_permissions" not in table_names:
@@ -127,6 +132,7 @@ def _ensure_project_permission_role_columns() -> None:
 
 
 def _ensure_login_otp_columns() -> None:
+    """Ensure OTP-challenge columns needed by password-change flow exist."""
     with engine.begin() as conn:
         table_names = set(inspect(conn).get_table_names())
         if "login_otp_challenges" not in table_names:
@@ -150,6 +156,7 @@ def _ensure_login_otp_columns() -> None:
 
 
 def _seed_project_access_levels() -> None:
+    """Upsert canonical project access-level definitions into the database."""
     db = SessionLocal()
     try:
         for key, definition in PROJECT_ACCESS_LEVEL_DEFINITIONS.items():
@@ -169,6 +176,7 @@ def _seed_project_access_levels() -> None:
 
 
 def _closest_access_level_key(effective_permissions: dict[str, bool]) -> str:
+    """Pick the access-level key whose defaults most closely match a permission set."""
     best_key = "viewer"
     best_distance = 10**9
     for key, definition in PROJECT_ACCESS_LEVEL_DEFINITIONS.items():
@@ -184,6 +192,7 @@ def _closest_access_level_key(effective_permissions: dict[str, bool]) -> str:
 
 
 def _backfill_project_permission_access_levels() -> None:
+    """Backfill missing access-level keys and synchronize effective permission columns."""
     db = SessionLocal()
     try:
         rows = db.query(ProjectPermission).all()
@@ -226,8 +235,9 @@ def _backfill_project_permission_access_levels() -> None:
 
 
 def init_db() -> None:
-    # For MVP simplicity: create tables if they don't exist.
-    # In production, use Alembic migrations.
+    # MVP path: create missing tables and perform additive runtime migrations.
+    # Production deployments should replace this with explicit Alembic migrations.
+    """Create base tables and execute runtime migration/seed helpers required at startup."""
     Base.metadata.create_all(bind=engine)
     _ensure_project_schema_columns()
     _ensure_project_permission_role_columns()
@@ -235,18 +245,3 @@ def init_db() -> None:
     _cleanup_legacy_schema()
     _seed_project_access_levels()
     _backfill_project_permission_access_levels()
-    # It only creates tables.
-
-"""
-How it fits in the Startup Flow
-1. Docker starts the Postgres container.
-
-2. FastAPI starts the Backend container.
-
-3. FastAPI triggers the @app.on_event("startup") function.
-
-4. That function calls init_db().
-
-5. init_db() builds your tables so that when the very next line calls _seed_users(), 
-the "User" table is ready and waiting.
-"""

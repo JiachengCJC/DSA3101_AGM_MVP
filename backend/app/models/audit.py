@@ -1,3 +1,5 @@
+"""ORM models for audit logs, project updates, and funding events."""
+
 import json
 
 from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, Text, func
@@ -7,6 +9,7 @@ from app.db.base import Base
 
 
 class AuditLog(Base):
+    """Records user actions and diff payloads for auditability."""
     __tablename__ = "audit_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -23,10 +26,12 @@ class AuditLog(Base):
 
     @staticmethod
     def dumps(obj) -> str:
+        """Serialize an audit diff payload to JSON using stable defaults."""
         return json.dumps(obj, ensure_ascii=False, separators=(",", ":"), default=str)
 
 
 class ProjectUpdate(Base):
+    """Stores project update notes authored by users."""
     __tablename__ = "project_updates"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -42,6 +47,7 @@ class ProjectUpdate(Base):
 
 
 class ProjectFundingEvent(Base):
+    """Stores atomic funding additions logged against projects."""
     __tablename__ = "project_funding_events"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

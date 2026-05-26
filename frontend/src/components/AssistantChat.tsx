@@ -1,3 +1,7 @@
+/**
+ * Chat-sidepanel component for assistant interactions.
+ * Maintains local conversation state, sends bounded history to the backend, and handles fallback error UI.
+ */
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import api from '../api'
 

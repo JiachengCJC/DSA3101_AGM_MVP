@@ -1,3 +1,5 @@
+"""Convenience imports for ORM models used during metadata registration."""
+
 from app.models.user import User
 from app.models.project import Project
 from app.models.project_option import (
