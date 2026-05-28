@@ -136,7 +136,7 @@ DEFAULT_PROJECT_FIELD_OPTIONS: dict[str, list[str]] = {
     ],
 }
 
-
+# records an event in the auditlog for project-related actions, with optional JSON diff data for updates.
 def _log(db: Session, actor_user_id: int, action: str, entity_type: str, entity_id: int, diff: dict | None = None):
     """Append an audit-log row for project-domain actions without committing immediately."""
     db.add(
@@ -167,7 +167,7 @@ def _is_owner(project: Project, user: User) -> bool:
     """Return `True` when the user owns the project."""
     return project.owner_id == user.id
 
-
+# check if a user has access to a project by loading their explicit permission row, and evaluating it with ownership/admin status and access-level defaults.
 def _permission_row(db: Session, project_id: int, user_id: int) -> ProjectPermission | None:
     """Return the explicit project-permission row for a user, if one exists."""
     return (
@@ -176,7 +176,7 @@ def _permission_row(db: Session, project_id: int, user_id: int) -> ProjectPermis
         .first()
     )
 
-
+# normalization
 def _normalize_access_level_key(access_level_key: str | None) -> str:
     """Normalize access-level aliases to canonical keys (`principal_investigator`, `team_member`, `viewer`)."""
     if not access_level_key:
@@ -224,7 +224,7 @@ def _permissions_for_level(
         return _default_permissions_for_level(normalized)
     return {field: bool(getattr(access_level, field, False)) for field in PROJECT_PERMISSION_FIELDS}
 
-
+# takes a role's default permissions and merges them with any custom overrides
 def _effective_permission_values(
     permission: ProjectPermission,
     access_levels: dict[str, ProjectAccessLevel],
@@ -712,7 +712,7 @@ def create_trc_category_option(
     db.refresh(option)
     return _option_to_schema(option)
 
-
+# Takes form data, standardizes the tags, saves the project, sets the creator as the owner, writes an audit log, and saves "Version 1" of the project.
 @router.post("", response_model=ProjectOut)
 def create_project(payload: ProjectCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Create a project, sync standardized options, audit the action, and snapshot initial version state."""

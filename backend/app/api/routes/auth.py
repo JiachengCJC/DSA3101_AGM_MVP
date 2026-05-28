@@ -306,7 +306,7 @@ def _validate_submitted_challenge_state(db: Session, challenge: LoginOtpChalleng
     if challenge.expires_at < now:
         raise HTTPException(status_code=400, detail="OTP expired. Generate a new OTP.")
 
-
+# admin tools: create a new user account, list users, view user details, and delete users safely with ownership and minimum-admin guards.
 @router.post("/register", response_model=UserOut)
 def register(
     payload: UserCreate,
@@ -500,7 +500,7 @@ def me(user=Depends(get_current_user)):
     """Return the currently authenticated user profile."""
     return user
 
-
+#step 1: login with email+password, check for trusted device cookie, and either bypass OTP or issue OTP challenge.
 @router.post("/token", response_model=LoginResult)
 def login(
     request: Request,
@@ -620,7 +620,7 @@ def resend_otp(payload: OtpResendIn, db: Session = Depends(get_db)):
     db.refresh(new_challenge)
     return _serialize_challenge(new_challenge, user)
 
-
+# Step 2: verify OTP, issue JWT, and optionally mint trusted device cookie if requested by user.
 @router.post("/otp/verify", response_model=Token)
 def verify_login_otp(payload: OtpVerifyIn, request: Request, response: Response, db: Session = Depends(get_db)):
     """Verify login OTP, issue JWT, and optionally mint/remove trusted-device state."""
@@ -706,7 +706,7 @@ def logout(
     db.commit()
     return MessageOut(message="Logged out successfully.")
 
-
+# Step 1: request password change by validating current password and sending OTP to email.
 @router.post("/password/change/request", response_model=LoginOtpChallengeOut)
 def request_password_change(
     payload: PasswordChangeRequestIn,
@@ -788,7 +788,7 @@ def resend_password_change_otp(
     db.refresh(new_challenge)
     return _serialize_challenge(new_challenge, user)
 
-
+# Step 2: verify OTP, issue JWT, and optionally mint trusted device cookie if requested by user.
 @router.post("/password/change/verify", response_model=MessageOut)
 def verify_password_change(
     payload: PasswordChangeVerifyIn,
